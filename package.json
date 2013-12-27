@@ -1,0 +1,19 @@
+{
+  "name": "transformer",
+  "version": "0.0.0",
+  "description": "",
+  "main": "app.coffee",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "BSD-2-Clause",
+  "dependencies": {
+    "connect": "~2.12.0",
+    "connect-redis": "~1.4.6",
+    "weld": "~0.2.2",
+    "jsdom": "~0.8.10",
+    "murl": "~0.4.1",
+    "json-filter": "0.0.1"
+  }
+}
