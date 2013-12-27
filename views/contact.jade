@@ -1,0 +1,16 @@
+extends layout
+
+block content
+    form(action='/contact-us', method='post')
+        p
+            label(for='name') Name
+            br
+            input.name(name='name', type='text', maxlength=20)
+
+        p
+            label(for='email') E-mail Address
+            br
+            input.email(name='email', type='text', maxlength=255)
+
+        p
+            input(type='submit', value='Submit')

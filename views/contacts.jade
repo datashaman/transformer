@@ -1,0 +1,15 @@
+extends layout
+
+block content
+    table.contacts
+        thead
+            tr
+                td Name
+                td E-mail Address
+        tbody.contacts
+            tr.contact
+                td.name
+                td.email
+        tfoot
+            tr
+                td(colspan=2)= contacts
