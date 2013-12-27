@@ -1,3 +1,4 @@
+jsdom = require('jsdom')
 murl = require('murl')
 _ = require('underscore')
 fs = require('fs')
@@ -21,37 +22,6 @@ simplifyReq = (req) ->
     session: req.session
     startTime: req._startTime
 
-setupContextFilters = (filters) ->
-    jsonFilter = require('json-filter')
-
-    (req, res, next) ->
-        req.locals = {}
-
-        for [ params, callback ] in filters
-            r = simplifyReq(req)
-            filter = if typeof params is 'object' then params else { route: { name: params } }
-            if jsonFilter(r, filter)
-                _(req.locals).extend(callback(req))
-        next()
-
-addDebug = (req, window, $, weld, end) ->
-    locals = _.clone(req.locals)
-    _(locals).extend
-        request: simplifyReq(req)
-
-    fs.readFile req.locals.template, 'utf8', (err, template) ->
-        throw err if err
-        console.log template
-
-        _(req.locals).extend
-            html: template
-            end: new Date()
-            time: req.locals.end - req.locals.start
-
-        $('#debug').html(JSON.stringify(simplifyReq(req), null, 4))
-
-        end()
-
 setupRoutes = (routes) ->
     matches = {}
 
@@ -61,7 +31,7 @@ setupRoutes = (routes) ->
     (req, res, next) ->
         if !matches[req.url]?
             for route in routes
-                params = route.pattern(req.url)
+                params = route.pattern(req._parsedUrl.pathname)
 
                 if params
                     matches[req.url] = [ route, params ]
@@ -71,35 +41,36 @@ setupRoutes = (routes) ->
 
         next()
 
-setupResponse = (callback) ->
+setupContextFilters = (filters) ->
+    jsonFilter = require('json-filter')
+
     (req, res, next) ->
-        template = fs.readFileSync(req.locals.template, 'utf8')
+        req.locals = {}
+        req.directives = {}
 
-        jsdom = require('jsdom')
-        document = jsdom.jsdom(template)
-        req.window = window = document.parentWindow
+        r = simplifyReq(req)
 
-        weldTag = document.createElement('script')
-        weldTag.src = 'http://localhost:1337/scripts/weld.js'
-        document.body.appendChild(weldTag)
+        for [ params, callback ] in filters
+            filter = if typeof params is 'object' then params else { route: { name: params } }
+            if jsonFilter(r, filter)
+                _(req.locals).extend(callback(req))
 
-        jsdom.jQueryify window, 'http://localhost:1337/scripts/jquery.min.js', ->
-            window.weld(window.$('html')[0], req.locals, {
-                map: (parent, element, key, val) ->
-                    switch key
-                        when 'username'
-                            element.setAttribute('href', '/users/' + val)
+        next()
 
-                    console.log
-                        parent: parent
-                        element: element
-                        key: key
-                        val: val
-            })
-            res.end window.document.innerHTML
+renderResponse = (req, res, next) ->
+    jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf-8')
+    transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf-8')
 
-endResponse = (req, res) ->
-    res.end()
+    jsdom.env
+        file: 'views/' + req.locals._view + '.html'
+        src: [
+            jquery,
+            transparency
+        ]
+        done: (errors, window) ->
+            window.$('html').render(req.locals, req.directives)
+            window.$('script.jsdom').remove()
+            res.end window.document.doctype + window.document.outerHTML
 
 routes = [
     { name: 'users', url: '/users' }
@@ -119,20 +90,30 @@ users = [{
     lastName: 'BartFast'
 }]
 
+directives =
+    user:
+        username:
+            href: ->
+                '/users/' + @username
+
 filters = [
     [ ALL, (req) ->
         start: new Date()
     ]
     [ 'home', (req) ->
         title: 'Home'
-        template: 'home.html'
+        _view: 'home'
     ]
     [ 'users', (req) ->
+        req.directives.users = directives.user
+
         title: 'Users'
         users: users
-        template: 'users.html'
+        _view: 'users'
     ]
     [ 'user', (req) ->
+        req.directives.user = directives.user
+
         for user in users
             if req.params.username is user.username
                 found = user
@@ -140,7 +121,7 @@ filters = [
 
         user: found
         title: 'User ' + user.username
-        template: 'user.html'
+        _view: 'user'
     ]
 ]
 
@@ -159,7 +140,7 @@ app = connect()
     .use(connect.query())
     .use(setupRoutes(routes))
     .use(setupContextFilters(filters))
-    .use(setupResponse(addDebug))
+    .use(renderResponse)
 
 http = require('http')
 http.createServer(app).listen(1337, '127.0.0.1')
