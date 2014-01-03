@@ -3,7 +3,11 @@ murl = require('murl')
 _ = require('lodash')
 fs = require('fs')
 jade = require('jade')
+jsonFilter = require('json-filter')
 
+
+# Simplify the request object down to the things
+# we will likely be filtering on
 simplifyReq = (req) ->
     route: req.route
     params: req.params
@@ -23,90 +27,128 @@ simplifyReq = (req) ->
     session: req.session
     startTime: req._startTime
 
-setupRoutes = (routes) ->
+# Core logic of the application
+setupApp = (config) ->
+    _(config).defaults
+        viewPath: './views/'
+        plugins: []
+        routes: []
+        filters: []
+        directives: {}
+        menus: []
+
+    # Merge the plugins' components into the config dictionary
+    _(config.plugins).each (plugin) ->
+        config.routes = config.routes.concat(plugin.routes) if plugin.routes?
+        _(config.directives).merge(plugin.directives) if plugin.directives?
+        config.filters = config.filters.concat(plugin.filters) if plugin.filters?
+        config.menus = config.menus.concat(plugin.menus) if plugin.menus?
+
+    # Load the source for jquery and transparency (used later by jsdom)
+    jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
+    transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf8')
+
+    views = {}
+    patterns = {}
     matches = {}
 
-    for route in routes
-        route.pattern = murl(route.url)
+    # For each route defined, create and store a URL generator (using murl)
+    for route in config.routes
+        patterns[route.name] = route.pattern = murl(route.url)
 
+    # Return connect middleware
     (req, res, next) ->
-        if !matches[req.url]?
-            for route in routes
-                params = route.pattern(req._parsedUrl.pathname)
+        # Start with a fresh locals dictionary
+        req.locals =
+            url: (name, args...) ->
+                patterns[name](args)
 
-                if params
-                    matches[req.url] = [ route, params ]
-                    break
-
-        [ req.route, req.params] = matches[req.url] if matches[req.url]?
-
-        next()
-
-setupDirectives = (config) ->
-    (req, res, next) ->
+        # Store the configured global directives (for Jade) 
+        # in the request
         req.directives = config.directives
-        next()
 
-setupContextFilters = (filters) ->
-    jsonFilter = require('json-filter')
+        # We only want to match against the pathname of the request URL
+        pathname = req._parsedUrl.pathname
 
-    (req, res, next) ->
-        req.locals = {}
+        # Memoize the result in a matches collection
+        unless matches[pathname]?
+            for route in config.routes
+                params = route.pattern(pathname)
 
-        r = simplifyReq(req)
-
-        for [ params, callback ] in filters
-            filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
-            if jsonFilter(r, filter)
-                _(req.locals).merge(callback(req, res))
-                if res.statusCode == 302
+                # If a match is found, memoize the route and parameters found
+                # and break out of the loop
+                if params?
+                    matches[pathname] = [ route, params ]
                     break
 
-        next()
+        # Store the memoized match results in the request
+        # for the next middleware in the chain
+        [ req.route, req.params] = matches[pathname] if matches[pathname]?
 
-renderResponse = (config) ->
-    jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf-8')
-    transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf-8')
+        # If there is a matched route, process it
+        if req.route?
+            # Create a simplified view of the request for running through the filters
+            r = simplifyReq(req)
 
-    (req, res, next) ->
-        if res.statusCode != 302
-            req.locals.menus = config.menus
+            # Loop through the defined filters looking for ones where there's a match
+            for [ params, callback ] in config.filters
+                # The filter to match on could be a string or an object.
+                # If it's a string, it's the equivalent of a filter on route name, with GET method
+                filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
 
-            fileName = config.viewPath + req.locals._view + '.jade'
-            fn = jade.compile(fs.readFileSync(fileName, 'utf-8'),
-                filename: fileName)
+                # If the filter matches
+                if jsonFilter(r, filter)
+                    # Run the callback with the request and response
+                    # and merge the results into the request locals dictionary
+                    _(req.locals).merge(callback(req, res))
 
-            console.log req.locals
+                    # If the response has been redirected by a filter,
+                    # shortcircuit out of the loop
+                    if res.statusCode == 302
+                        break
 
-            jsdom.env
-                html: fn(req.locals)
-                src: [
-                    jquery,
-                    transparency
-                ]
-                done: (errors, window) ->
-                    window.$('html').render(req.locals, req.directives)
-                    window.$('script.jsdom').remove()
+            # Prepare the response if we have not been redirected
+            if res.statusCode != 302
+                # If a view is defined by a filter, prepare an HTML response
+                if req.locals._view
+                    req.locals.menus = config.menus
 
-                    res.end window.document.doctype + window.document.outerHTML
+                    # Memoize the compiled views
+                    viewName = req.locals._view
+                    unless views[viewName]?
+                        filename = config.viewPath + viewName + '.jade'
+                        views[viewName] = jade.compile(fs.readFileSync(filename, 'utf8'), {
+                            filename: filename,
+                            pretty: true
+                        })
+
+                    jsdom.env
+                        html: views[viewName](req.locals)
+                        src: [
+                            jquery,
+                            transparency
+                        ]
+                        done: (errors, window) ->
+                            # Render using transparency
+                            window.$('html').render(req.locals, req.directives)
+
+                            # Remove any artefacts introduced by jsdom
+                            window.$('script.jsdom').remove()
+
+                            # Write out the rendered response
+                            res.writeHead 200, { 'Content-Type': 'text/html' }
+                            res.end window.document.doctype + window.document.outerHTML
+                # Assume a JSON response of the locals dictionary is required
+                else
+                    res.writeHead 200, { 'Content-Type': 'application/json' }
+                    res.end JSON.stringify(req.locals)
+        # No route match found, emit a 404
+        else
+            res.writeHead 404
+            res.end 'Page Not Found'
 
 module.exports =
     createApp: (config) ->
-        _(config).defaults
-            viewPath: './views/'
-            secret: 'somesecret'
-            plugins: []
-            routes: []
-            filters: []
-            directives: {}
-            menus: []
-
-        _(config.plugins).each (plugin) ->
-            config.routes = config.routes.concat(plugin.routes) if plugin.routes?
-            _(config.directives).merge(plugin.directives) if plugin.directives?
-            config.filters = config.filters.concat(plugin.filters) if plugin.filters?
-            config.menus = config.menus.concat(plugin.menus) if plugin.menus?
-
         connect = require('connect')
         RedisStore = require('connect-redis')(connect)
 
@@ -120,10 +162,7 @@ module.exports =
             .use(connect.bodyParser())
             .use(connect.json())
             .use(connect.query())
-            .use(setupRoutes(config.routes))
-            .use(setupDirectives(config))
-            .use(setupContextFilters(config.filters))
-            .use(renderResponse(config))
+            .use(setupApp(config))
 
     runApp: (app, port=1337, host='127.0.0.1') ->
         http = require('http')

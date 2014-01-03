@@ -10,9 +10,8 @@ module.exports =
     ]
     filters: [
         [ 'contacts', (req) ->
-            req.session.contacts = []
+            # req.session.contacts = []
             contacts: req.session.contacts
-            _view: 'contacts'
         ]
         [ 'contact', (req) ->
             _view: 'contact'
@@ -22,10 +21,10 @@ module.exports =
             route:
                 name: 'contact'
         }, (req, res) ->
-            # req.session.contacts.push req.body
+            req.session.contacts.push req.body
 
             res.statusCode = 302
-            res.setHeader('Location', '/')
+            res.setHeader('Location', '/contacts')
             res.end('Redirecting...')
         ]
     ]

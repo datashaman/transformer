@@ -1,7 +1,7 @@
 extends layout
 
 block content
-    table.contacts
+    table
         thead
             tr
                 td Name
@@ -12,4 +12,4 @@ block content
                 td.email
         tfoot
             tr
-                td(colspan=2)= contacts
+                td(colspan=2)= contacts.length + ' ' + (contacts.length==1 ? 'item' : 'items')

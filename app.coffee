@@ -5,6 +5,7 @@ user = require('./plugins/user')
 contact = require('./plugins/contact')
 
 app = core.createApp
+    secret: 'somesecret'
     plugins: [ home, user, contact ]
 
 core.runApp(app)

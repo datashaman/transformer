@@ -1,7 +1,7 @@
 extends layout
 
 block content
-    form(action='/contact-us', method='post')
+    form(action=url('contact'), method='post')
         p
             label(for='name') Name
             br
