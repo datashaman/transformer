@@ -4,11 +4,11 @@ module.exports =
         { name: 'home', url: '/' }
     ]
     menus: [
-        { name: 'home', url: '/' }
+        { route: 'home' }
     ]
     directives:
         menus:
-            name:
+            label:
                 href: ->
                     @url
     filters: [

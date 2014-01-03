@@ -4,6 +4,7 @@ _ = require('lodash')
 fs = require('fs')
 jade = require('jade')
 jsonFilter = require('json-filter')
+inflect = require('inflect')
 
 
 # Simplify the request object down to the things
@@ -49,19 +50,26 @@ setupApp = (config) ->
     transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf8')
 
     views = {}
-    patterns = {}
     matches = {}
 
     # For each route defined, create and store a URL generator (using murl)
-    for route in config.routes
-        patterns[route.name] = route.pattern = murl(route.url)
+    routes = _.reduce(config.routes, ((routes, route) ->
+        routes[route.name] = route.generator = murl(route.url)
+        routes), {})
+
+    # Update and store the menu structure
+    menus = _.map config.menus, (menu) ->
+        route = routes[menu.route]
+        url: route(menu.params)
+        name: menu.route
+        label: menu.label || inflect.titleize(menu.route)
 
     # Return connect middleware
     (req, res, next) ->
         # Start with a fresh locals dictionary
         req.locals =
             url: (name, args...) ->
-                patterns[name](args)
+                routes[name](args)
 
         # Store the configured global directives (for Jade) 
         # in the request
@@ -72,14 +80,14 @@ setupApp = (config) ->
 
         # Memoize the result in a matches collection
         unless matches[pathname]?
-            for route in config.routes
-                params = route.pattern(pathname)
+            _.find config.routes, (route) ->
+                params = route.generator(pathname)
 
                 # If a match is found, memoize the route and parameters found
                 # and break out of the loop
                 if params?
                     matches[pathname] = [ route, params ]
-                    break
+                    return true
 
         # Store the memoized match results in the request
         # for the next middleware in the chain
@@ -111,11 +119,11 @@ setupApp = (config) ->
             if res.statusCode != 302
                 # If a view is defined by a filter, prepare an HTML response
                 if req.locals._view
-                    req.locals.menus = config.menus
+                    req.locals.menus = menus
 
                     # Memoize the compiled views
                     viewName = req.locals._view
-                    unless views[viewName]?
+                    unless false and views[viewName]?
                         filename = config.viewPath + viewName + '.jade'
                         views[viewName] = jade.compile(fs.readFileSync(filename, 'utf8'), {
                             filename: filename,

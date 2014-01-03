@@ -17,12 +17,12 @@ directives =
 module.exports =
     name: 'user'
     directives: directives
-    menus: [
-        { name: 'users', url: '/users' }
-    ]
     routes: [
         { name: 'users', url: '/users' }
         { name: 'user', url: '/users/{username}' }
+    ]
+    menus: [
+        { route: 'users' }
     ]
     filters: [
         [ 'users', (req) ->
