@@ -6,11 +6,6 @@ module.exports =
     menus: [
         { route: 'home' }
     ]
-    directives:
-        menus:
-            label:
-                href: ->
-                    @url
     filters: [
         [ 'home', (req) ->
             title: 'Home'

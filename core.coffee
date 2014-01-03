@@ -38,6 +38,11 @@ setupApp = (config) ->
         directives: {}
         menus: []
 
+    config.directives.menus =
+        label:
+            href: ->
+                @url
+
     # Merge the plugins' components into the config dictionary
     _(config.plugins).each (plugin) ->
         config.routes = config.routes.concat(plugin.routes) if plugin.routes?
