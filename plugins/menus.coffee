@@ -17,23 +17,22 @@ module.exports =
     ]
 
     directives:
-        menus:
-            label:
-                href: -> @url
+        menus: label: href: -> @url
 
     listeners:
         configure: (config) ->
             config.menus = []
 
+        configurePlugin: (config, plugin) ->
+            config.menus = config.menus.concat(plugin.menus) if plugin.menus?
+
         afterConfigure: (config, routes) ->
-            # Update and store the menu structure
-            console.log config.menus
+            # Generate URLs and labels for menus
             _.each config.menus, (menu) ->
                 route = routes[menu.route]
                 _.merge menu,
                     url: route(menu.params)
                     label: menu.label || inflect.titleize(menu.route)
-            console.log config.menus
 
         htmlLocals: (config, locals) ->
             locals.menus = config.menus

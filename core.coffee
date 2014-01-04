@@ -54,6 +54,7 @@ setupApp = (config) ->
         viewPath: './views/'
         directives: {}
         headers: []
+        footers: []
 
     # Utility function to bind a listener funtionally
     bindListener = (listener, event) ->
@@ -70,18 +71,24 @@ setupApp = (config) ->
     # Allow configure listeners to affect the config
     emitter.emit 'configure', config
 
-    # Merge the plugins' components into the config dictionary
     _.forEach config.plugins, (plugin) ->
         # Bind the plugin's non-configure listeners
         # The configure listeners are already bound
-        _.forEach _.omit(plugin.listeners, 'configure'), bindListener
+        listeners = _.omit(plugin.listeners, 'configure')
+        _.forEach listeners, bindListener
 
         # Merge the plugin config into the main config
         config.routes = config.routes.concat(plugin.routes) if plugin.routes?
         _(config.directives).merge(plugin.directives) if plugin.directives?
         config.filters = config.filters.concat(plugin.filters) if plugin.filters?
-        config.menus = config.menus.concat(plugin.menus) if plugin.menus?
         config.headers = config.headers.concat(plugin.headers) if plugin.headers?
+        config.footers = config.footers.concat(plugin.footers) if plugin.footers?
+
+        # Allow plugins to do their own configuration per plugin
+        emitter.emit 'configurePlugin', config, plugin
+
+        # Return nothing so that we don't inadvertently stop the loop
+        return
 
     # Load the source for jquery and transparency (used later by jsdom)
     jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
@@ -157,19 +164,29 @@ setupApp = (config) ->
 
                     # Memoize the compiled views
                     viewName = req.locals._view
-                    unless false and views[viewName]?
+                    unless views[viewName]?
                         filename = config.viewPath + viewName + '.jade'
                         views[viewName] = jade.compile(fs.readFileSync(filename, 'utf8'), {
                             filename: filename,
                             pretty: true
                         })
 
-                    # Setup headers HTML
-                    req.locals.headers = _.map config.headers, (header) ->
-                        jade.render header
+                    # Setup HTML for header / footer
+                    for block in ['headers', 'footers']
+                        req.locals[block] = _.map config[block], (source) ->
+                            jade.render source
+
+                    # Render the HTML
+                    html = views[viewName](req.locals)
+
+                    # Unset the headers/footers from request locals
+                    # since they are rendered in by Jade
+                    # and we do not want them to be rerendered by Transparency
+                    delete req.locals.headers
+                    delete req.locals.footers
 
                     jsdom.env
-                        html: views[viewName](req.locals)
+                        html: html
                         src: [
                             jquery,
                             transparency
