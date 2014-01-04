@@ -1,10 +1,23 @@
+# jsdom environment needed for server-side rendering with Transparency
 jsdom = require('jsdom')
+
+# pattern matching and parameter extraction from the URL
 murl = require('murl')
+
+# Functional goodness
 _ = require('lodash')
+
+# Used for reading in templates and jsdom scripts
 fs = require('fs')
+
+# Server-side layout and partial rendering
 jade = require('jade')
+
+# object matching and filtering for dispatch
 jsonFilter = require('json-filter')
-inflect = require('inflect')
+
+# Observer pattern for interaction with plugins (mostly)
+events = require('events')
 
 
 # Simplify the request object down to the things
@@ -30,25 +43,45 @@ simplifyReq = (req) ->
 
 # Core logic of the application
 setupApp = (config) ->
+    # Main emitter for pub/sub of events
+    emitter = new events.EventEmitter()
+
     _(config).defaults
-        viewPath: './views/'
         plugins: []
+        listeners: {}
         routes: []
         filters: []
+        viewPath: './views/'
         directives: {}
-        menus: []
+        headers: []
 
-    config.directives.menus =
-        label:
-            href: ->
-                @url
+    # Utility function to bind a listener funtionally
+    bindListener = (listener, event) ->
+        emitter.on(event, listener)
+
+    # Bind any globally configured listeners
+    _.forEach config.listeners, bindListener
+
+    # Bind the plugins' configure listeners first
+    # since they influence the running of further listeners
+    _.forEach config.plugins, (plugin) ->
+        bindListener(plugin.listeners.configure, 'configure') if plugin.listeners?.configure?
+
+    # Allow configure listeners to affect the config
+    emitter.emit 'configure', config
 
     # Merge the plugins' components into the config dictionary
-    _(config.plugins).each (plugin) ->
+    _.forEach config.plugins, (plugin) ->
+        # Bind the plugin's non-configure listeners
+        # The configure listeners are already bound
+        _.forEach _.omit(plugin.listeners, 'configure'), bindListener
+
+        # Merge the plugin config into the main config
         config.routes = config.routes.concat(plugin.routes) if plugin.routes?
         _(config.directives).merge(plugin.directives) if plugin.directives?
         config.filters = config.filters.concat(plugin.filters) if plugin.filters?
         config.menus = config.menus.concat(plugin.menus) if plugin.menus?
+        config.headers = config.headers.concat(plugin.headers) if plugin.headers?
 
     # Load the source for jquery and transparency (used later by jsdom)
     jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
@@ -62,12 +95,7 @@ setupApp = (config) ->
         routes[route.name] = route.generator = murl(route.url)
         routes), {})
 
-    # Update and store the menu structure
-    menus = _.map config.menus, (menu) ->
-        route = routes[menu.route]
-        url: route(menu.params)
-        name: menu.route
-        label: menu.label || inflect.titleize(menu.route)
+    emitter.emit 'afterConfigure', config, routes
 
     # Return connect middleware
     (req, res, next) ->
@@ -109,7 +137,8 @@ setupApp = (config) ->
                 # If it's a string, it's the equivalent of a filter on route name, with GET method
                 filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
 
-                # If the filter matches
+                # Use json-filter to pattern match the filter requirements
+                # against the simplified request
                 if jsonFilter(r, filter)
                     # Run the callback with the request and response
                     # and merge the results into the request locals dictionary
@@ -124,7 +153,7 @@ setupApp = (config) ->
             if res.statusCode != 302
                 # If a view is defined by a filter, prepare an HTML response
                 if req.locals._view
-                    req.locals.menus = menus
+                    emitter.emit 'htmlLocals', config, req.locals
 
                     # Memoize the compiled views
                     viewName = req.locals._view
@@ -134,6 +163,10 @@ setupApp = (config) ->
                             filename: filename,
                             pretty: true
                         })
+
+                    # Setup headers HTML
+                    req.locals.headers = _.map config.headers, (header) ->
+                        jade.render header
 
                     jsdom.env
                         html: views[viewName](req.locals)
