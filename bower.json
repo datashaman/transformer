@@ -14,7 +14,6 @@
     "tests"
   ],
   "dependencies": {
-    "jquery": "~2.0.3",
-    "beebole-pure": "*"
+    "jquery": "~2.0.3"
   }
 }

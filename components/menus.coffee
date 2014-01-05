@@ -23,8 +23,8 @@ module.exports =
         configure: (config) ->
             config.menus = []
 
-        configurePlugin: (config, plugin) ->
-            config.menus = config.menus.concat(plugin.menus) if plugin.menus?
+        configureComponent: (config, component) ->
+            config.menus = config.menus.concat(component.menus) if component.menus?
 
         afterConfigure: (config, routes) ->
             # Generate URLs and labels for menus

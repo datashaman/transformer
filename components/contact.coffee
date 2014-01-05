@@ -25,9 +25,6 @@ module.exports =
                 name: 'contacts'
         }, (req, res) ->
             req.session.contacts.push req.body
-
-            res.statusCode = 302
-            res.setHeader('Location', '/contacts')
-            res.end('Redirecting...')
+            @redirect res, '/contacts'
         ]
     ]

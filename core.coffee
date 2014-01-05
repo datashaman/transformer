@@ -1,4 +1,3 @@
-# jsdom environment needed for server-side rendering with Transparency
 jsdom = require('jsdom')
 
 # pattern matching and parameter extraction from the URL
@@ -16,199 +15,243 @@ jade = require('jade')
 # object matching and filtering for dispatch
 jsonFilter = require('json-filter')
 
-# Observer pattern for interaction with plugins (mostly)
-events = require('events')
+# Delegator
+delegate = require('delegate')
+
+# Load the source for jquery and transparency (used later by jsdom)
+jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
+transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf8')
 
 
-# Simplify the request object down to the things
-# we will likely be filtering on
-simplifyReq = (req) ->
-    route: req.route
-    params: req.params
-    locals: req.locals
-    httpVersion: req.httpVersion
-    headers: req.headers
-    trailers: req.trailers
-    url: req.url
-    originalUrl: req.originalUrl
-    parsedUrl: req._parsedUrl
-    method: req.method
-    originalMethod: req.originalMethod
-    body: req.body
-    files: req.files
-    query: req.query
-    cookies: req.cookies
-    session: req.session
-    startTime: req._startTime
+class Server
+    constructor: (@config) ->
+        @registry = {}
+        @views = {}
+        @matches = {}
+        @values = {}
 
-# Core logic of the application
-setupApp = (config) ->
-    # Main emitter for pub/sub of events
-    emitter = new events.EventEmitter()
+        @emitter = new delegate.EventEmitter()
+        delegate @, @emitter
 
-    _(config).defaults
-        plugins: []
-        listeners: {}
-        routes: []
-        filters: []
-        viewPath: './views/'
-        directives: {}
-        headers: []
-        footers: []
+        @configure()
 
-    # Utility function to bind a listener funtionally
-    bindListener = (listener, event) ->
-        emitter.on(event, listener)
+    configure: ->
+        _(@config).defaults
+            components: []
+            listeners: {}
+            routes: []
+            filters: []
+            viewPath: './views/'
+            directives: {}
+            headers: []
+            footers: []
 
-    # Bind any globally configured listeners
-    _.forEach config.listeners, bindListener
+        @bindListeners()
 
-    # Bind the plugins' configure listeners first
-    # since they influence the running of further listeners
-    _.forEach config.plugins, (plugin) ->
-        bindListener(plugin.listeners.configure, 'configure') if plugin.listeners?.configure?
+        # Allow configure listeners to affect the config
+        @emit 'configure', @config
 
-    # Allow configure listeners to affect the config
-    emitter.emit 'configure', config
+        _.forEach @config.components, @configureComponent, @
 
-    _.forEach config.plugins, (plugin) ->
-        # Bind the plugin's non-configure listeners
+        # For each route defined, create and store a URL generator (using murl)
+        @routes = _.reduce(@config.routes, ((routes, route) ->
+            routes[route.name] = route.generator = murl(route.url)
+            routes), {})
+
+        @emit 'afterConfigure', @config, @routes
+
+    bindListeners: ->
+        # Bind any globally configured listeners
+        _.forEach @config.listeners, @bindListener, @
+
+        # Bind the components' configure listeners first
+        # since they influence the running of further listeners
+        configureComponents = _.filter @config.components, (component) ->
+            component.listeners?.configure?
+        bindConfigureListener = (component) ->
+            @bindListener(component.listeners.configure, 'configure')
+        _.forEach configureComponents, bindConfigureListener, @
+
+    configureComponent: (component) ->
+        # Bind the component's non-configure listeners
         # The configure listeners are already bound
-        listeners = _.omit(plugin.listeners, 'configure')
-        _.forEach listeners, bindListener
+        listeners = _.omit(component.listeners, 'configure')
+        _.forEach listeners, @bindListener, @
 
-        # Merge the plugin config into the main config
-        config.routes = config.routes.concat(plugin.routes) if plugin.routes?
-        _(config.directives).merge(plugin.directives) if plugin.directives?
-        config.filters = config.filters.concat(plugin.filters) if plugin.filters?
-        config.headers = config.headers.concat(plugin.headers) if plugin.headers?
-        config.footers = config.footers.concat(plugin.footers) if plugin.footers?
+        # Merge the component config into the main config
+        @config.routes = @config.routes.concat(component.routes) if component.routes?
+        _(@config.directives).merge(component.directives) if component.directives?
+        @config.filters = @config.filters.concat(component.filters) if component.filters?
+        @config.headers = @config.headers.concat(component.headers) if component.headers?
+        @config.footers = @config.footers.concat(component.footers) if component.footers?
 
-        # Allow plugins to do their own configuration per plugin
-        emitter.emit 'configurePlugin', config, plugin
+        # Allow components to do their own configuration per component
+        @emit 'configureComponent', @config, component
 
         # Return nothing so that we don't inadvertently stop the loop
         return
 
-    # Load the source for jquery and transparency (used later by jsdom)
-    jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
-    transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf8')
+    set: (key, value) ->
+        delete @values[key]
+        @registry[key] = value
 
-    views = {}
-    matches = {}
+    get: (key, args...) ->
+        value = @registry[key]
+        if value instanceof Function
+            @values[key] = value(args...) unless @values[key]?
+            @values[key]
+        else
+            value
 
-    # For each route defined, create and store a URL generator (using murl)
-    routes = _.reduce(config.routes, ((routes, route) ->
-        routes[route.name] = route.generator = murl(route.url)
-        routes), {})
+    # Simplify the request object down to the things
+    # we will likely be filtering on
+    simplifyReq: (req) ->
+        r = _.pick req, [
+            'route', 'params', 'locals',
+            'httpVersion', 'headers', 'trailers',
+            'url', 'originalUrl', 'method',
+            'originalMethod', 'body', 'files',
+            'query', 'cookies', 'session'
+        ]
+        _.merge r,
+            parsedUrl: req._parsedUrl
+            startTime: req._startTime
 
-    emitter.emit 'afterConfigure', config, routes
+    # Utility function to bind a listener functionally
+    bindListener: (listener, event) ->
+        @on(event, listener)
 
-    # Return connect middleware
-    (req, res, next) ->
-        # Start with a fresh locals dictionary
-        req.locals =
-            url: (name, args...) ->
-                routes[name](args)
-
-        # Store the configured global directives (for Jade) 
-        # in the request
-        req.directives = config.directives
-
-        # We only want to match against the pathname of the request URL
-        pathname = req._parsedUrl.pathname
-
-        # Memoize the result in a matches collection
-        unless matches[pathname]?
-            _.find config.routes, (route) ->
+    resolveRoute: (pathname) ->
+        # Memoize the result in matches collection
+        unless @matches[pathname]?
+            _.find @config.routes, (route) =>
                 params = route.generator(pathname)
 
                 # If a match is found, memoize the route and parameters found
                 # and break out of the loop
                 if params?
-                    matches[pathname] = [ route, params ]
+                    @matches[pathname] = [ route, params ]
                     return true
 
         # Store the memoized match results in the request
         # for the next middleware in the chain
-        [ req.route, req.params] = matches[pathname] if matches[pathname]?
+        @matches[pathname]
+
+    applyFilters: (req, res) ->
+        # Create a simplified view of the request for running through the filters
+        r = @simplifyReq(req)
+
+        # Loop through the defined filters looking for ones where there's a match
+        for [ params, callback ] in @config.filters
+            # The filter to match on could be a string or an object.
+            # If it's a string, it's the equivalent of a filter on route name, with GET method
+            filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
+
+            # Use json-filter to pattern match the filter requirements
+            # against the simplified request
+            if jsonFilter(r, filter)
+                # Run the callback with the request and response
+                # and merge the results into the request locals dictionary
+                _(req.locals).merge(callback.call(@, req, res))
+
+                # If the response has been redirected by a filter,
+                # shortcircuit out of the loop
+                break if res.statusCode == 302
+
+    redirect: (res, location) ->
+        res.statusCode = 302
+        res.setHeader('Location', location)
+        res.end('Redirecting...')
+ 
+    renderView: (locals) ->
+        viewName = locals._view
+
+        unless @views[viewName]?
+            filename = @config.viewPath + viewName + '.jade'
+            view = jade.compile(fs.readFileSync(filename, 'utf8'), {
+                filename: filename,
+                pretty: true
+            })
+
+            # Setup HTML for header / footer
+            # by prepping a locals dictionary
+            # with rendered blocks
+            locals = _.clone(locals)
+
+            for block in ['headers', 'footers']
+                markup = _.map @config[block], (source) ->
+                    jade.render source
+                locals[block] = markup.join('\n')
+
+            locals.url = (name, args...) =>
+                @routes[name](args)
+
+            # Render the HTML using a compiled Jade template
+            @views[viewName] = view(locals)
+
+        @views[viewName]
+
+    renderHTML: (req, res) ->
+        # Allow listeners to configure html locals
+        @emit 'htmlLocals', @config, req.locals
+
+        html = @renderView(req.locals)
+
+        jsdom.env
+            html: html
+            src: [
+                jquery,
+                transparency
+            ]
+            done: (errors, window) =>
+                # Render using transparency
+                window.$('html').render(req.locals, @config.directives)
+
+                # Remove any artefacts introduced by jsdom
+                window.$('script.jsdom').remove()
+
+                # Write out the rendered response
+                res.writeHead 200, { 'Content-Type': 'text/html' }
+                res.end window.document.doctype + window.document.outerHTML
+
+    renderJSON: (req, res) ->
+        res.writeHead 200, { 'Content-Type': 'application/json' }
+        res.end JSON.stringify(req.locals)
+
+    renderError: (req, res, statusCode, message) ->
+        res.writeHead statusCode
+        res.end message
+
+    # connect middleware
+    middleware: (req, res) ->
+        req.locals = {}
+
+        if match = @resolveRoute(req._parsedUrl.pathname)
+            [ req.route, req.params ] = match
 
         # If there is a matched route, process it
         if req.route?
-            # Create a simplified view of the request for running through the filters
-            r = simplifyReq(req)
+            @applyFilters req, res
 
-            # Loop through the defined filters looking for ones where there's a match
-            for [ params, callback ] in config.filters
-                # The filter to match on could be a string or an object.
-                # If it's a string, it's the equivalent of a filter on route name, with GET method
-                filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
-
-                # Use json-filter to pattern match the filter requirements
-                # against the simplified request
-                if jsonFilter(r, filter)
-                    # Run the callback with the request and response
-                    # and merge the results into the request locals dictionary
-                    _(req.locals).merge(callback(req, res))
-
-                    # If the response has been redirected by a filter,
-                    # shortcircuit out of the loop
-                    if res.statusCode == 302
-                        break
-
-            # Prepare the response if we have not been redirected
+            # Prepare the response if we have not been redirected already
             if res.statusCode != 302
                 # If a view is defined by a filter, prepare an HTML response
                 if req.locals._view
-                    emitter.emit 'htmlLocals', config, req.locals
+                    @renderHTML req, res
 
-                    # Memoize the compiled views
-                    viewName = req.locals._view
-                    unless views[viewName]?
-                        filename = config.viewPath + viewName + '.jade'
-                        views[viewName] = jade.compile(fs.readFileSync(filename, 'utf8'), {
-                            filename: filename,
-                            pretty: true
-                        })
-
-                    # Setup HTML for header / footer
-                    for block in ['headers', 'footers']
-                        req.locals[block] = _.map config[block], (source) ->
-                            jade.render source
-
-                    # Render the HTML
-                    html = views[viewName](req.locals)
-
-                    # Unset the headers/footers from request locals
-                    # since they are rendered in by Jade
-                    # and we do not want them to be rerendered by Transparency
-                    delete req.locals.headers
-                    delete req.locals.footers
-
-                    jsdom.env
-                        html: html
-                        src: [
-                            jquery,
-                            transparency
-                        ]
-                        done: (errors, window) ->
-                            # Render using transparency
-                            window.$('html').render(req.locals, req.directives)
-
-                            # Remove any artefacts introduced by jsdom
-                            window.$('script.jsdom').remove()
-
-                            # Write out the rendered response
-                            res.writeHead 200, { 'Content-Type': 'text/html' }
-                            res.end window.document.doctype + window.document.outerHTML
                 # Assume a JSON response of the locals dictionary is required
                 else
-                    res.writeHead 200, { 'Content-Type': 'application/json' }
-                    res.end JSON.stringify(req.locals)
+                    @renderJSON req, res
+
         # No route match found, emit a 404
         else
-            res.writeHead 404
-            res.end 'Page Not Found'
+            @renderError req, res, 404, 'Page Not Found'
+
+configureServer = (config) ->
+    server = new Server(config)
+
+    (req, res, next) ->
+        server.middleware(req, res, next)
 
 module.exports =
     createApp: (config) ->
@@ -225,7 +268,7 @@ module.exports =
             .use(connect.bodyParser())
             .use(connect.json())
             .use(connect.query())
-            .use(setupApp(config))
+            .use(configureServer(config))
 
     runApp: (app, port=1337, host='127.0.0.1') ->
         http = require('http')

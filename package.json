@@ -17,6 +17,8 @@
     "lodash": "~2.4.1",
     "jade": "~1.0.0",
     "jsdom": "~0.8.10",
-    "inflect": "~0.3.0"
+    "inflect": "~0.3.0",
+    "eventemitter2": "~0.4.13",
+    "delegate": "0.0.1"
   }
 }

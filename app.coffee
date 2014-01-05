@@ -1,13 +1,11 @@
+_ = require('lodash')
 core = require('./core')
 
-brand = require('./plugins/brand')
-menus = require('./plugins/menus')
-home = require('./plugins/home')
-user = require('./plugins/user')
-contact = require('./plugins/contact')
+names = ['brand', 'menus', 'home', 'user', 'contact']
+components = _.map names, (name) -> require './components/' + name
 
 app = core.createApp
     secret: 'somesecret'
-    plugins: [ brand, menus, home, user, contact ]
+    components: components
 
-core.runApp(app)
+core.runApp app
