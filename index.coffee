@@ -1,3 +1,6 @@
+path = require('path')
+glob = require('glob')
+
 jsdom = require('jsdom')
 
 # pattern matching and parameter extraction from the URL
@@ -154,6 +157,10 @@ class Server
                 # and merge the results into the request locals dictionary
                 _(req.locals).merge(callback.call(@, req, res))
 
+                # If req.locals now has a _view property,
+                # shortcircuit out of the loop
+                break if req.locals._view?
+
                 # If the response has been redirected by a filter,
                 # shortcircuit out of the loop
                 break if res.statusCode == 302
@@ -162,32 +169,43 @@ class Server
         res.statusCode = 302
         res.setHeader('Location', location)
         res.end('Redirecting...')
- 
+
+    findComponentView: (viewName) ->
+        fileName = viewName + '.jade'
+        files = glob.sync('components/*/views/**/*.jade')
+        _.find files, (file) ->
+            file.slice(-fileName.length) == fileName
+
+    compileView: (viewName, locals) ->
+        # filename = @config.viewPath + viewName + '.jade'
+        filename = @findComponentView(viewName)
+
+        view = jade.compile(fs.readFileSync(filename, 'utf8'), {
+            filename: filename,
+            pretty: true
+        })
+
+        # Setup HTML for header / footer
+        # by prepping a locals dictionary
+        # with rendered blocks
+        locals = _.clone(locals)
+
+        for block in ['headers', 'footers']
+            markup = _.map @config[block], (source) ->
+                jade.render source
+            locals[block] = markup.join('\n')
+
+        locals.url = (name, args...) =>
+            @routes[name](args)
+
+        # Render the HTML using a compiled Jade template
+        view(locals)
+
     renderView: (locals) ->
         viewName = locals._view
 
         unless @views[viewName]?
-            filename = @config.viewPath + viewName + '.jade'
-            view = jade.compile(fs.readFileSync(filename, 'utf8'), {
-                filename: filename,
-                pretty: true
-            })
-
-            # Setup HTML for header / footer
-            # by prepping a locals dictionary
-            # with rendered blocks
-            locals = _.clone(locals)
-
-            for block in ['headers', 'footers']
-                markup = _.map @config[block], (source) ->
-                    jade.render source
-                locals[block] = markup.join('\n')
-
-            locals.url = (name, args...) =>
-                @routes[name](args)
-
-            # Render the HTML using a compiled Jade template
-            @views[viewName] = view(locals)
+            @views[viewName] = @compileView(viewName, locals)
 
         @views[viewName]
 
@@ -200,16 +218,12 @@ class Server
         jsdom.env
             html: html
             src: [
+                jquery
                 transparency
             ]
             done: (errors, window) =>
                 # Render using transparency
-                elements = window.document.getElementsByTagName 'html'
-                for element in elements
-                    window.Transparency.render element, req.locals, @config.directives
-
-                # Remove any artefacts introduced by jsdom
-                # window.$('script.jsdom').remove()
+                window.$('html').render req.locals, @config.directives
 
                 # Write out the rendered response
                 res.writeHead 200, { 'Content-Type': 'text/html' }
