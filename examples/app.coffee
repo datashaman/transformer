@@ -1,11 +1,11 @@
 _ = require('lodash')
-core = require('./core')
+transformer = require('transformer')
 
 names = ['brand', 'menus', 'home', 'user', 'contact']
 components = _.map names, (name) -> require './components/' + name
 
-app = core.createApp
+app = transformer.createApp
     secret: 'somesecret'
     components: components
 
-core.runApp app
+transformer.runApp app

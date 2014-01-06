@@ -1,0 +1,3 @@
+# Install node-foreman
+# Run with nf start
+web: nodemon

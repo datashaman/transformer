@@ -20,7 +20,7 @@ delegate = require('delegate')
 
 # Load the source for jquery and transparency (used later by jsdom)
 jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
-transparency = fs.readFileSync('./node_modules/transparency/dist/transparency.min.js', 'utf8')
+transparency = fs.readFileSync('./bower_components/transparency/dist/transparency.min.js', 'utf8')
 
 
 class Server
@@ -200,15 +200,16 @@ class Server
         jsdom.env
             html: html
             src: [
-                jquery,
                 transparency
             ]
             done: (errors, window) =>
                 # Render using transparency
-                window.$('html').render(req.locals, @config.directives)
+                elements = window.document.getElementsByTagName 'html'
+                for element in elements
+                    window.Transparency.render element, req.locals, @config.directives
 
                 # Remove any artefacts introduced by jsdom
-                window.$('script.jsdom').remove()
+                # window.$('script.jsdom').remove()
 
                 # Write out the rendered response
                 res.writeHead 200, { 'Content-Type': 'text/html' }

@@ -1,0 +1,14 @@
+{
+  "name": "transformer-example",
+  "version": "0.1.0",
+  "description": "An example project with transformer.",
+  "main": "app.coffee",
+  "scripts": {
+    "start": "nodemon -w app.coffee -w components/ -w public/ -w views/ app.coffee"
+  },
+  "author": "Marlin Forbes <marlinf@datashaman.com>",
+  "license": "BSD-2-Clause",
+  "dependencies": {
+    "transformer": "0.1.0"
+  }
+}
