@@ -1,6 +1,3 @@
-# Functional goodness
-_ = require('lodash')
-
 module.exports =
     name: 'brand'
 

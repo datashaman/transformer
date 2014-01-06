@@ -6,4 +6,3 @@ docs/core.html: core.coffee
 development:
 	sudo npm install -g coffee-script foreman bower nodemon docco
 	npm install
-	bower install

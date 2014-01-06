@@ -20,6 +20,8 @@
     "inflect": "~0.3.0",
     "eventemitter2": "~0.4.13",
     "delegate": "0.0.1",
-    "glob": "~3.2.7"
+    "glob": "~3.2.7",
+    "jquery": "~2.1.0-beta3",
+    "transparency": "~0.9.14"
   }
 }

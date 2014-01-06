@@ -22,8 +22,8 @@ jsonFilter = require('json-filter')
 delegate = require('delegate')
 
 # Load the source for jquery and transparency (used later by jsdom)
-jquery = fs.readFileSync('./bower_components/jquery/jquery.min.js', 'utf8')
-transparency = fs.readFileSync('./bower_components/transparency/dist/transparency.min.js', 'utf8')
+jquery = fs.readFileSync(__dirname + '/node_modules/jquery/dist/jquery.min.js', 'utf8')
+transparency = fs.readFileSync(__dirname + '/node_modules/transparency/dist/transparency.min.js', 'utf8')
 
 
 class Server
