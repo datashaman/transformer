@@ -5,11 +5,6 @@ connect = require('connect')
 RedisStore = require('connect-redis')(connect)
 
 
-runApp: (app, port=1337, host='127.0.0.1') ->
-    http = require('http')
-    http.createServer(app).listen(port, host)
-    console.log 'Server running at http://' + host + ':' + port + '/'
-
 names = ['brand', 'menus', 'home', 'users', 'contacts']
 components = _.map names, (name) -> require './components/' + name
 
