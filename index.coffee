@@ -235,32 +235,32 @@ class Server
         res.writeHead statusCode
         res.end message
 
-    # connect middleware
-    middleware: (req, res) ->
-        req.locals = {}
+    # return connect middleware
+    terminator: ->
+        (req, res) =>
+            req.locals = {}
 
-        if match = @resolveRoute(req._parsedUrl.pathname)
-            [ req.route, req.params ] = match
+            if match = @resolveRoute(req._parsedUrl.pathname)
+                [ req.route, req.params ] = match
 
-        # If there is a matched route, process it
-        if req.route?
-            @applyFilters req, res
+            # If there is a matched route, process it
+            if req.route?
+                @applyFilters req, res
 
-            # Prepare the response if we have not been redirected already
-            if res.statusCode != 302
-                # If a view is defined by a filter, prepare an HTML response
-                if req.locals._view
-                    @renderHTML req, res
+                # Prepare the response if we have not been redirected already
+                if res.statusCode != 302
+                    # If a view is defined by a filter, prepare an HTML response
+                    if req.locals._view
+                        @renderHTML req, res
 
-                # Assume a JSON response of the locals dictionary is required
-                else
-                    @renderJSON req, res
+                    # Assume a JSON response of the locals dictionary is required
+                    else
+                        @renderJSON req, res
 
-        # No route match found, emit a 404
-        else
-            @renderError req, res, 404, 'Page Not Found'
+            # No route match found, emit a 404
+            else
+                @renderError req, res, 404, 'Page Not Found'
 
 module.exports = (config) ->
     server = new Server(config)
-    (req, res, next) ->
-        server.middleware(req, res, next)
+    server.terminator()
