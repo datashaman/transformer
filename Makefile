@@ -1,7 +1,7 @@
-docs: docs/core.html
+docs: docs/index.html
 
-docs/core.html: core.coffee
-	docco core.coffee
+docs/index.html: index.coffee
+	docco index.coffee
 
 development:
 	sudo npm install -g coffee-script foreman bower nodemon docco
