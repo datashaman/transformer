@@ -84,7 +84,13 @@ class Server
         # Merge the component config into the main config
         @config.routes = @config.routes.concat(component.routes) if component.routes?
         _(@config.directives).merge(component.directives) if component.directives?
-        @config.filters = @config.filters.concat(component.filters) if component.filters?
+
+        if component.filters?
+            filters = _.forEach component.filters, (filter) ->
+                filter.component = component
+
+            @config.filters = @config.filters.concat(filters)
+
         @config.headers = @config.headers.concat(component.headers) if component.headers?
         @config.footers = @config.footers.concat(component.footers) if component.footers?
 
@@ -94,10 +100,14 @@ class Server
         # Return nothing so that we don't inadvertently stop the loop
         return
 
+    # Service Locator pattern
     set: (key, value) ->
         delete @values[key]
         @registry[key] = value
 
+    # Service Locator pattern
+    # If the registry contains a function, run it with args... and cache the result
+    # Otherwise assume the registry contains the value required
     get: (key, args...) ->
         value = @registry[key]
         if value instanceof Function
@@ -143,21 +153,26 @@ class Server
         r = @simplifyReq(req)
 
         # Loop through the defined filters looking for ones where there's a match
-        for [ params, callback ] in @config.filters
+        for filter in @config.filters
+            [ params, callback ] = filter
+
             # The filter to match on could be a string or an object.
             # If it's a string, it's the equivalent of a filter on route name, with GET method
-            filter = if typeof params is 'object' then params else { method: 'GET', route: { name: params } }
+            params = { method: 'GET', route: { name: params } } unless typeof params is 'object'
 
             # Use json-filter to pattern match the filter requirements
             # against the simplified request
-            if jsonFilter(r, filter)
+            if jsonFilter(r, params)
                 # Run the callback with the request and response
                 # and merge the results into the request locals dictionary
                 _(req.locals).merge(callback.call(@, req, res))
 
                 # If req.locals now has a _view property,
                 # shortcircuit out of the loop
-                break if req.locals._view?
+                if req.locals._view?
+                    req.locals._component = filter.component
+                    req.locals._filter = filter
+                    break
 
                 # If the response has been redirected by a filter,
                 # shortcircuit out of the loop
@@ -177,9 +192,12 @@ class Server
             # Ends with fileName
             file.slice(-fileName.length) == fileName
 
-    compileView: (viewName, locals) ->
-        # filename = @config.viewPath + viewName + '.jade'
-        filename = @findComponentView(viewName)
+    compileView: (locals) ->
+        componentName = locals._component.name
+        viewName = locals._view
+
+        filename = 'components/' + componentName + '/views/' + viewName + '.jade'
+        console.log filename
 
         view = jade.compile(fs.readFileSync(filename, 'utf8'), {
             filename: filename,
@@ -203,9 +221,13 @@ class Server
         view(locals)
 
     cacheView: (locals) ->
+        componentName = locals._component.name
         viewName = locals._view
-        @views[viewName] = @compileView(viewName, locals) unless @views[viewName]?
-        @views[viewName]
+
+        key = componentName + '-' + viewName
+
+        @views[key] = @compileView(locals) unless @views[key]?
+        @views[key]
 
     renderHTML: (req, res) ->
         # Allow listeners to configure html locals

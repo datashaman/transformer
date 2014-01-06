@@ -1,5 +1,5 @@
 module.exports =
-    name: 'contact'
+    name: 'contacts'
     routes: [
         { name: 'contact us', url: '/contact-us' }
         { name: 'contacts', url: '/contacts' }

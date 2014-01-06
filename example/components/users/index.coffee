@@ -14,7 +14,7 @@ userDirective =
                 '/users/' + @username
 
 module.exports =
-    name: 'user'
+    name: 'users'
     directives:
         users: userDirective
         user: userDirective
