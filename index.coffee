@@ -136,8 +136,6 @@ class Server
                     @matches[pathname] = [ route, params ]
                     return true
 
-        # Store the memoized match results in the request
-        # for the next middleware in the chain
         @matches[pathname]
 
     applyFilters: (req, res) ->
@@ -171,9 +169,12 @@ class Server
         res.end('Redirecting...')
 
     findComponentView: (viewName) ->
+        # Not the neatest or fastest way of doing this, no collisions yet... :)
         fileName = viewName + '.jade'
         files = glob.sync('components/*/views/**/*.jade')
+        # Find a file that ends with fileName
         _.find files, (file) ->
+            # Ends with fileName
             file.slice(-fileName.length) == fileName
 
     compileView: (viewName, locals) ->
@@ -201,19 +202,16 @@ class Server
         # Render the HTML using a compiled Jade template
         view(locals)
 
-    renderView: (locals) ->
+    cacheView: (locals) ->
         viewName = locals._view
-
-        unless @views[viewName]?
-            @views[viewName] = @compileView(viewName, locals)
-
+        @views[viewName] = @compileView(viewName, locals) unless @views[viewName]?
         @views[viewName]
 
     renderHTML: (req, res) ->
         # Allow listeners to configure html locals
         @emit 'htmlLocals', @config, req.locals
 
-        html = @renderView(req.locals)
+        html = @cacheView(req.locals)
 
         jsdom.env
             html: html
