@@ -183,22 +183,13 @@ class Server
         res.setHeader('Location', location)
         res.end('Redirecting...')
 
-    findComponentView: (viewName) ->
-        # Not the neatest or fastest way of doing this, no collisions yet... :)
-        fileName = viewName + '.jade'
-        files = glob.sync('components/*/views/**/*.jade')
-        # Find a file that ends with fileName
-        _.find files, (file) ->
-            # Ends with fileName
-            file.slice(-fileName.length) == fileName
-
-    compileView: (locals) ->
+    findComponentView: (locals) ->
         componentName = locals._component.name
         viewName = locals._view
+        'components/' + componentName + '/views/' + viewName + '.jade'
 
-        filename = 'components/' + componentName + '/views/' + viewName + '.jade'
-        console.log filename
-
+    compileView: (locals) ->
+        filename = @findComponentView(locals)
         view = jade.compile(fs.readFileSync(filename, 'utf8'), {
             filename: filename,
             pretty: true

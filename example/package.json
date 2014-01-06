@@ -10,7 +10,9 @@
   "author": "Marlin Forbes <marlinf@datashaman.com>",
   "license": "BSD-2-Clause",
   "dependencies": {
+    "connect-redis": "~1.4.6",
     "transformer": "0.1.0",
-    "lodash": "~2.4.1"
+    "lodash": "~2.4.1",
+    "inflect": "~0.3.0"
   }
 }

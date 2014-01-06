@@ -2,22 +2,18 @@
   "name": "transformer",
   "version": "0.1.0",
   "description": "",
-  "main": "app.coffee",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "coffee app.coffee"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "author": "Marlin Forbes <marlinf@datashaman.com>",
   "license": "BSD-2-Clause",
   "dependencies": {
     "connect": "~2.12.0",
-    "connect-redis": "~1.4.6",
     "murl": "~0.4.1",
     "json-filter": "0.0.1",
     "lodash": "~2.4.1",
     "jade": "~1.0.0",
     "jsdom": "~0.8.10",
-    "inflect": "~0.3.0",
     "eventemitter2": "~0.4.13",
     "delegate": "0.0.1",
     "glob": "~3.2.7",
