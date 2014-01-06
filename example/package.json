@@ -4,7 +4,8 @@
   "description": "An example project with transformer.",
   "main": "app.coffee",
   "scripts": {
-    "start": "nodemon -w app.coffee -w components/ -w public/ -w views/ app.coffee"
+    "start": "nodemon -w app.coffee -w components/ -w public/ -w views/ app.coffee",
+    "install": "bower install"
   },
   "author": "Marlin Forbes <marlinf@datashaman.com>",
   "license": "BSD-2-Clause",
