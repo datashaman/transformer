@@ -260,31 +260,7 @@ class Server
         else
             @renderError req, res, 404, 'Page Not Found'
 
-configureServer = (config) ->
+module.exports = (config) ->
     server = new Server(config)
-
     (req, res, next) ->
         server.middleware(req, res, next)
-
-module.exports =
-    createApp: (config) ->
-        connect = require('connect')
-        RedisStore = require('connect-redis')(connect)
-
-        connect()
-            .use(connect.favicon())
-            .use(connect.logger('dev'))
-            .use(connect.static('public'))
-            .use(connect.methodOverride())
-            .use(connect.cookieParser())
-            .use(connect.session(store: new RedisStore(), secret: config.secret))
-            .use(connect.bodyParser())
-            .use(connect.json())
-            .use(connect.query())
-            .use(configureServer(config))
-
-    runApp: (app, port=1337, host='127.0.0.1') ->
-        http = require('http')
-        http.createServer(app).listen(port, host)
-
-        console.log 'Server running at http://' + host + ':' + port + '/'

@@ -1,11 +1,36 @@
+http = require('http')
 _ = require('lodash')
 transformer = require('transformer')
+connect = require('connect')
+RedisStore = require('connect-redis')(connect)
+
+
+runApp: (app, port=1337, host='127.0.0.1') ->
+    http = require('http')
+    http.createServer(app).listen(port, host)
+    console.log 'Server running at http://' + host + ':' + port + '/'
 
 names = ['brand', 'menus', 'home', 'users', 'contacts']
 components = _.map names, (name) -> require './components/' + name
 
-app = transformer.createApp
+config =
     secret: 'somesecret'
     components: components
 
-transformer.runApp app
+app = connect()
+    .use(connect.favicon())
+    .use(connect.logger('dev'))
+    .use(connect.static('public'))
+    .use(connect.methodOverride())
+    .use(connect.cookieParser())
+    .use(connect.session(store: new RedisStore(), secret: config.secret))
+    .use(connect.bodyParser())
+    .use(connect.json())
+    .use(connect.query())
+    .use(transformer(config))
+
+port = 1337
+host = '127.0.0.1'
+
+http.createServer(app).listen(port, host)
+console.log 'Server running at http://' + host + ':' + port + '/'
