@@ -1,3 +1,6 @@
+_ = require('lodash')
+
+
 users = [{
     username: 'datashaman'
     firstName: 'Marlin'
@@ -32,12 +35,8 @@ module.exports =
             _view: 'users'
         ]
         [ 'user', (req) ->
-            for user in users
-                if req.params.username is user.username
-                    found = user
-                    break
-
-            user: found
+            user = _.find(users, (user) -> req.params.username == user.username)
+            user: user
             title: 'User ' + user.username
             _view: 'user'
         ]
