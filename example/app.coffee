@@ -3,18 +3,21 @@ _ = require('lodash')
 transformer = require('transformer')
 connect = require('connect')
 RedisStore = require('connect-redis')(connect)
+winston = require('winston')
 
 
 names = ['brand', 'menus', 'home', 'users', 'contacts']
 components = _.map names, (name) -> require './components/' + name
 
 config =
+    logTransports: [
+        new winston.transports.Console({ level: 'debug' })
+    ]
     secret: 'somesecret'
     components: components
 
 app = connect()
     .use(connect.favicon())
-    .use(connect.logger('dev'))
     .use(connect.static('public'))
     .use(connect.methodOverride())
     .use(connect.cookieParser())

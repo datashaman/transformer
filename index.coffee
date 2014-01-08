@@ -21,6 +21,9 @@ jsonFilter = require('json-filter')
 # Delegator
 delegate = require('delegate')
 
+# Logging
+winston = require('winston')
+
 # Load the source for jquery and transparency (used later by jsdom)
 jquery = fs.readFileSync(__dirname + '/node_modules/jquery/dist/jquery.min.js', 'utf8')
 transparency = fs.readFileSync(__dirname + '/node_modules/transparency/dist/transparency.min.js', 'utf8')
@@ -48,6 +51,14 @@ class Server
             directives: {}
             headers: []
             footers: []
+            logTransports: [
+                new winston.transports.Console
+                    json: true
+            ]
+
+        @logger = new winston.Logger
+            transports: @config.logTransports
+        @logger.cli()
 
         @bindListeners()
 
@@ -76,6 +87,8 @@ class Server
         _.forEach configureComponents, bindConfigureListener, @
 
     configureComponent: (component) ->
+        @logger.info 'configure', component: component.name
+
         # Bind the component's non-configure listeners
         # The configure listeners are already bound
         listeners = _.omit(component.listeners, 'configure')
@@ -158,11 +171,14 @@ class Server
 
             # The filter to match on could be a string or an object.
             # If it's a string, it's the equivalent of a filter on route name, with GET method
-            params = { method: 'GET', route: { name: params } } unless typeof params is 'object'
+            if typeof params is 'string'
+                params = { method: 'GET', route: { name: params } }
 
             # Use json-filter to pattern match the filter requirements
             # against the simplified request
             if jsonFilter(r, params)
+                @logger.debug 'filter-match', { params: JSON.stringify(params), url: r.url }
+
                 # Run the callback with the request and response
                 # and merge the results into the request locals dictionary
                 _(req.locals).merge(callback.call(@, req, res))

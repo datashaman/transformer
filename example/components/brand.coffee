@@ -8,7 +8,6 @@ module.exports =
     headers: [
         '''
         #brand
-            img#logo(src='/images/logo.png')
             #byline
         '''
     ]
@@ -21,12 +20,16 @@ module.exports =
                 a.label
         '''
     ]
-
+    routes: [
+        { name: 'info', url: '/info' }
+    ]
     filters: [
         [ {}, ->
             links: [
                 { url: '/info', label: 'Info' }
             ]
             byline: 'A brand, yo'
+        ]
+        [ 'info', ->
         ]
     ]
