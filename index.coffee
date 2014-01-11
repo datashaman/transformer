@@ -87,7 +87,7 @@ class Server
         _.forEach configureComponents, bindConfigureListener, @
 
     configureComponent: (component) ->
-        @logger.info 'configure', component: component.name
+        @logger.info 'configure', { component: component.name }
 
         # Bind the component's non-configure listeners
         # The configure listeners are already bound
@@ -177,7 +177,7 @@ class Server
             # Use json-filter to pattern match the filter requirements
             # against the simplified request
             if jsonFilter(r, params)
-                @logger.debug 'filter-match', { params: JSON.stringify(params), url: r.url }
+                @logger.debug 'filter-match', { params: params, url: r.url }
 
                 # Run the callback with the request and response
                 # and merge the results into the request locals dictionary

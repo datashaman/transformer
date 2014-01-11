@@ -6,15 +6,22 @@ RedisStore = require('connect-redis')(connect)
 winston = require('winston')
 
 
-names = ['brand', 'menus', 'home', 'users', 'contacts']
-components = _.map names, (name) -> require './components/' + name
-
 config =
     logTransports: [
-        new winston.transports.Console({ level: 'debug' })
+        new winston.transports.File
+            filename: __dirname + '/logs/app.log'
+            level: 'debug'
+            raw: true
     ]
     secret: 'somesecret'
-    components: components
+    components: _.map [
+        'brand',
+        'menus',
+        'home',
+        'users',
+        'contacts'
+    ], (name) ->
+        require './components/' + name
 
 app = connect()
     .use(connect.favicon())
@@ -31,4 +38,3 @@ port = 1337
 host = '127.0.0.1'
 
 http.createServer(app).listen(port, host)
-console.log 'Server running at http://' + host + ':' + port + '/'

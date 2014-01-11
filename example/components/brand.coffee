@@ -29,7 +29,9 @@ module.exports =
                 { url: '/info', label: 'Info' }
             ]
             byline: 'A brand, yo'
+            @done()
         ]
         [ 'info', ->
+            @done()
         ]
     ]
