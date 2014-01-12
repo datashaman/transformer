@@ -8,6 +8,7 @@ module.exports =
     headers: [
         '''
         #brand
+            img#logo(src='/brand/images/logo.jpg')
             #byline
         '''
     ]
@@ -24,14 +25,15 @@ module.exports =
         { name: 'info', url: '/info' }
     ]
     filters: [
-        [ {}, ->
-            links: [
-                { url: '/info', label: 'Info' }
-            ]
-            byline: 'A brand, yo'
-            @done()
+        [ {}, (done) ->
+            @setLocal
+                links: [
+                    { url: '/info', label: 'Info' }
+                ]
+                byline: 'A brand, yo'
+            done()
         ]
-        [ 'info', ->
-            @done()
+        [ 'get info', ->
+            @render 'brand/info'
         ]
     ]

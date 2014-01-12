@@ -7,8 +7,7 @@ module.exports =
         { route: 'home' }
     ]
     filters: [
-        [ 'home', (req) ->
-            title: 'Home'
-            _view: 'home'
+        [ 'get home', ->
+            @render 'home/home', { title: 'Home' }
         ]
     ]

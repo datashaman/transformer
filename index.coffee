@@ -1,4 +1,5 @@
 path = require('path')
+
 glob = require('glob')
 
 jsdom = require('jsdom')
@@ -31,7 +32,7 @@ transparency = fs.readFileSync(__dirname + '/node_modules/transparency/dist/tran
 
 class Server
     constructor: (@config) ->
-        @registry = {}
+        @resources = {}
         @views = {}
         @matches = {}
         @values = {}
@@ -47,13 +48,13 @@ class Server
             listeners: {}
             routes: []
             filters: []
+            resources: []
             viewPath: './views/'
             directives: {}
             headers: []
             footers: []
             logTransports: [
-                new winston.transports.Console
-                    json: true
+                new winston.transports.Console()
             ]
 
         @logger = new winston.Logger
@@ -96,7 +97,13 @@ class Server
 
         # Merge the component config into the main config
         @config.routes = @config.routes.concat(component.routes) if component.routes?
+
         _(@config.directives).merge(component.directives) if component.directives?
+        if component.resources?
+            _.forEach component.resources, (resource, name) =>
+                @set(name, resource)
+
+            _(@config.resources).merge(component.resources)
 
         if component.filters?
             filters = _.forEach component.filters, (filter) ->
@@ -113,26 +120,30 @@ class Server
         # Return nothing so that we don't inadvertently stop the loop
         return
 
-    # Service Locator pattern
-    set: (key, value) ->
-        delete @values[key]
-        @registry[key] = value
+    setLocal: (values) ->
+        _.merge @locals, values
+
+    call: (callback, args...) ->
+        callback.call @, args...
 
     # Service Locator pattern
-    # If the registry contains a function, run it with args... and cache the result
-    # Otherwise assume the registry contains the value required
-    get: (key, args...) ->
-        value = @registry[key]
+    set: (key, value) ->
+        @resources[key] = value
+
+    # Service Locator pattern
+    get: (key, set) ->
+        value = @resources[key]
         if value instanceof Function
-            @values[key] = value(args...) unless @values[key]?
-            @values[key]
+            # Run function to get value with callback to hand execution to
+            value.call(@, set)
         else
-            value
+            # Execute the callback with the value
+            set.call(@, value)
 
     # Simplify the request object down to the things
     # we will likely be filtering on
-    simplifyReq: (req) ->
-        r = _.pick req, [
+    simplifyReq: ->
+        r = _.pick @req, [
             'route', 'params', 'locals',
             'httpVersion', 'headers', 'trailers',
             'url', 'originalUrl', 'method',
@@ -140,8 +151,8 @@ class Server
             'query', 'cookies', 'session'
         ]
         _.merge r,
-            parsedUrl: req._parsedUrl
-            startTime: req._startTime
+            parsedUrl: @req._parsedUrl
+            startTime: @req._startTime
 
     # Utility function to bind a listener functionally
     bindListener: (listener, event) ->
@@ -161,51 +172,72 @@ class Server
 
         @matches[pathname]
 
-    applyFilters: (req, res) ->
-        # Create a simplified view of the request for running through the filters
-        r = @simplifyReq(req)
+    applyFilters: (req, filters, fallback) ->
+        unless filters? and filters.length > 0
+            return fallback.call(@)
 
-        # Loop through the defined filters looking for ones where there's a match
-        for filter in @config.filters
-            [ params, callback ] = filter
+        filter = _.first(filters)
 
-            # The filter to match on could be a string or an object.
-            # If it's a string, it's the equivalent of a filter on route name, with GET method
-            if typeof params is 'string'
-                params = { method: 'GET', route: { name: params } }
+        [ params, callback ] = filter
 
-            # Use json-filter to pattern match the filter requirements
-            # against the simplified request
-            if jsonFilter(r, params)
-                @logger.debug 'filter-match', { params: params, url: r.url }
+        # The filter to match on could be a string or an object.
+        # If it's a string, it's the equivalent of a filter on '<method> <route.name>'
+        if typeof params is 'string'
+            paramString = params
+            parts = params.split(' ')
+            params =
+                method: parts.shift().toUpperCase()
+                route:
+                    name: parts.join(' ')
 
-                # Run the callback with the request and response
-                # and merge the results into the request locals dictionary
-                _(req.locals).merge(callback.call(@, req, res))
+        done = =>
+            @applyFilters req, _.rest(filters)
 
-                # If req.locals now has a _view property,
-                # shortcircuit out of the loop
-                if req.locals._view?
-                    req.locals._component = filter.component
-                    req.locals._filter = filter
-                    break
+        # Use json-filter to pattern match the filter requirements
+        # against the simplified request
+        if jsonFilter(req, params)
+            @logger.debug 'filter', { component: filter.component.name, params: params, url: req.url }
+            callback.call @, done
+        else
+            done()
 
-                # If the response has been redirected by a filter,
-                # shortcircuit out of the loop
-                break if res.statusCode == 302
+    render: (viewName, extra={}) ->
+        @logger.debug 'render', { viewName: viewName, extra: extra }
 
-    redirect: (res, location) ->
-        res.statusCode = 302
-        res.setHeader('Location', location)
-        res.end('Redirecting...')
+        _.merge @locals, extra
 
-    findComponentView: (locals) ->
-        componentName = locals._component.name
-        viewName = locals._view
+        # Allow listeners to configure html locals
+        @emit 'htmlLocals', @config, @locals
+
+        html = @cacheView(viewName)
+
+        jsdom.env
+            html: html
+            src: [
+                jquery
+                transparency
+            ]
+            done: (errors, window) =>
+                # Render using transparency
+                window.$('html').render @locals, @config.directives
+
+                # Write out the rendered response
+                @res.writeHead 200, { 'Content-Type': 'text/html' }
+                @res.end window.document.doctype + window.document.outerHTML
+
+    redirect: (location) ->
+        @logger.debug 'redirect', { location: location }
+
+        @res.statusCode = 302
+        @res.setHeader('Location', location)
+        @res.end('Redirecting...')
+
+    findComponentView: (viewName) ->
+        [ componentName, viewName ] = viewName.split('/')
         'components/' + componentName + '/views/' + viewName + '.jade'
 
-    compileView: (locals) ->
-        filename = @findComponentView(locals)
+    compileView: (viewName) ->
+        filename = @findComponentView(viewName)
         view = jade.compile(fs.readFileSync(filename, 'utf8'), {
             filename: filename,
             pretty: true
@@ -214,7 +246,7 @@ class Server
         # Setup HTML for header / footer
         # by prepping a locals dictionary
         # with rendered blocks
-        locals = _.clone(locals)
+        locals = _.clone(@locals)
 
         for block in ['headers', 'footers']
             markup = _.map @config[block], (source) ->
@@ -227,68 +259,43 @@ class Server
         # Render the HTML using a compiled Jade template
         view(locals)
 
-    cacheView: (locals) ->
-        componentName = locals._component.name
-        viewName = locals._view
+    cacheView: (viewName) ->
+        @views[viewName] = @compileView(viewName) unless @views[viewName]?
+        @views[viewName]
 
-        key = componentName + '-' + viewName
+    renderJSON: ->
+        @res.writeHead 200, { 'Content-Type': 'application/json' }
+        @res.end JSON.stringify(@req.locals)
 
-        @views[key] = @compileView(locals) unless @views[key]?
-        @views[key]
-
-    renderHTML: (req, res) ->
-        # Allow listeners to configure html locals
-        @emit 'htmlLocals', @config, req.locals
-
-        html = @cacheView(req.locals)
-
-        jsdom.env
-            html: html
-            src: [
-                jquery
-                transparency
-            ]
-            done: (errors, window) =>
-                # Render using transparency
-                window.$('html').render req.locals, @config.directives
-
-                # Write out the rendered response
-                res.writeHead 200, { 'Content-Type': 'text/html' }
-                res.end window.document.doctype + window.document.outerHTML
-
-    renderJSON: (req, res) ->
-        res.writeHead 200, { 'Content-Type': 'application/json' }
-        res.end JSON.stringify(req.locals)
-
-    renderError: (req, res, statusCode, message) ->
-        res.writeHead statusCode
-        res.end message
+    renderError: (statusCode, message) ->
+        @logger.warn 'error', { url: @req.url, statusCode: statusCode, message: message }
+        @res.writeHead statusCode
+        @res.end message
 
     # return connect middleware
     terminator: ->
         (req, res) =>
-            req.locals = {}
+            @req = req
+            @res = res
 
-            if match = @resolveRoute(req._parsedUrl.pathname)
-                [ req.route, req.params ] = match
+            @req.locals = {}
+            @locals = @req.locals
+            @session = @req.session
+            @params = @req.params
+
+            @get 'contacts', (contacts) ->
+                # console.log contacts
+
+            if match = @resolveRoute(@req._parsedUrl.pathname)
+                @logger.debug 'route', { route: match[0], params: match[1] }
+                [ @req.route, @req.params ] = match
 
             # If there is a matched route, process it
-            if req.route?
-                @applyFilters req, res
-
-                # Prepare the response if we have not been redirected already
-                if res.statusCode != 302
-                    # If a view is defined by a filter, prepare an HTML response
-                    if req.locals._view
-                        @renderHTML req, res
-
-                    # Assume a JSON response of the locals dictionary is required
-                    else
-                        @renderJSON req, res
-
-            # No route match found, emit a 404
+            if @req.route?
+                req = @simplifyReq()
+                @applyFilters req, @config.filters, @renderJson
             else
-                @renderError req, res, 404, 'Page Not Found'
+                @renderError 404, 'Page Not Found'
 
 module.exports = (config) ->
     server = new Server(config)

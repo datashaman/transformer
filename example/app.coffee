@@ -14,14 +14,13 @@ config =
             raw: true
     ]
     secret: 'somesecret'
-    components: _.map [
+    components: _.map([
         'brand',
         'menus',
         'home',
         'users',
         'contacts'
-    ], (name) ->
-        require './components/' + name
+    ], (name) -> require './components/' + name)
 
 app = connect()
     .use(connect.favicon())

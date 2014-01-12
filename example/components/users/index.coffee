@@ -1,16 +1,6 @@
 _ = require('lodash')
 
 
-users = [{
-    username: 'datashaman'
-    firstName: 'Marlin'
-    lastName: 'Forbes'
-}, {
-    username: 'slartibartfast'
-    firstName: 'Slarti'
-    lastName: 'BartFast'
-}]
-
 userDirective =
     username:
             href: ->
@@ -28,16 +18,29 @@ module.exports =
     menus: [
         { route: 'users' }
     ]
+    resources:
+        users: (set) ->
+            @call set, [{
+                username: 'datashaman'
+                firstName: 'Marlin'
+                lastName: 'Forbes'
+            }, {
+                username: 'slartibartfast'
+                firstName: 'Slarti'
+                lastName: 'BartFast'
+            }]
+        user: (set) ->
+            @get 'users', (users) ->
+                user = _.find(users, (user) => @req.params.username == user.username)
+                @call set, user
+
     filters: [
-        [ 'users', (req) ->
-            title: 'Users'
-            users: users
-            _view: 'users'
+        [ 'get users', ->
+            @get 'users', (users) ->
+                @render 'users/users', { title: 'Users', users: users }
         ]
-        [ 'user', (req) ->
-            user = _.find(users, (user) -> req.params.username == user.username)
-            user: user
-            title: 'User ' + user.username
-            _view: 'user'
+        [ 'get user', ->
+            @get 'user', (user) ->
+                @render 'users/user', { title: 'User ' + user.username, user: user }
         ]
     ]

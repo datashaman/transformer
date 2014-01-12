@@ -1,0 +1,15 @@
+{
+    "restartable": true,
+    "ignore": [
+        ".git",
+        "node_modules/**/node_modules",
+        "logs"
+    ],
+    "verbose": false,
+    "watch": [
+        "components",
+        "public",
+        "views"
+    ],
+    "ext": "html coffee js"
+}
