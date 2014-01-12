@@ -283,9 +283,6 @@ class Server
             @session = @req.session
             @params = @req.params
 
-            @get 'contacts', (contacts) ->
-                # console.log contacts
-
             if match = @resolveRoute(@req._parsedUrl.pathname)
                 @logger.debug 'route', { route: match[0], params: match[1] }
                 [ @req.route, @req.params ] = match
