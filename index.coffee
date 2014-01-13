@@ -43,7 +43,7 @@ class Server
         @configure()
 
     configure: ->
-        _(@config).defaults
+        _.defaults @config,
             components: []
             listeners: {}
             routes: []
@@ -59,6 +59,7 @@ class Server
 
         @logger = new winston.Logger
             transports: @config.logTransports
+
         @logger.cli()
 
         @bindListeners()
@@ -66,7 +67,7 @@ class Server
         # Allow configure listeners to affect the config
         @emit 'configure', @config
 
-        _.forEach @config.components, @configureComponent, @
+        _.forEach @config.components, @mergeComponentConfig, @
 
         # For each route defined, create and store a URL generator (using murl)
         @routes = _.reduce(@config.routes, ((routes, route) ->
@@ -83,36 +84,37 @@ class Server
         # since they influence the running of further listeners
         configureComponents = _.filter @config.components, (component) ->
             component.listeners?.configure?
+
         bindConfigureListener = (component) ->
             @bindListener(component.listeners.configure, 'configure')
+
         _.forEach configureComponents, bindConfigureListener, @
 
-    configureComponent: (component) ->
-        @logger.info 'configure', { component: component.name }
+    mergeComponentConfig: (component) ->
+        _.defaults component,
+            routes: []
+            listeners: {}
+            routes: []
+            directives: {}
+            resources: {}
+            headers: []
+            footers: []
+
+        @logger.debug 'merge-config', { component: component }
 
         # Bind the component's non-configure listeners
         # The configure listeners are already bound
-        listeners = _.omit(component.listeners, 'configure')
-        _.forEach listeners, @bindListener, @
+        _.forEach _.omit(component.listeners, 'configure'), @bindListener, @
 
         # Merge the component config into the main config
-        @config.routes = @config.routes.concat(component.routes) if component.routes?
+        _.merge @config, component, (a, b) ->
+            if _.isArray(a) then a.concat(b) else undefined
 
-        _(@config.directives).merge(component.directives) if component.directives?
-        if component.resources?
-            _.forEach component.resources, (resource, name) =>
-                @set(name, resource)
+        _.forEach component.resources, (resource, name) =>
+            @set(name, resource)
 
-            _(@config.resources).merge(component.resources)
-
-        if component.filters?
-            filters = _.forEach component.filters, (filter) ->
-                filter.component = component
-
-            @config.filters = @config.filters.concat(filters)
-
-        @config.headers = @config.headers.concat(component.headers) if component.headers?
-        @config.footers = @config.footers.concat(component.footers) if component.footers?
+        _.forEach component.filters, (filter) ->
+            filter.component = component
 
         # Allow components to do their own configuration per component
         @emit 'configureComponent', @config, component
@@ -143,16 +145,16 @@ class Server
     # Simplify the request object down to the things
     # we will likely be filtering on
     simplifyReq: ->
-        r = _.pick @req, [
+        _.merge _.pick(@req, [
             'route', 'params', 'locals',
             'httpVersion', 'headers', 'trailers',
             'url', 'originalUrl', 'method',
             'originalMethod', 'body', 'files',
             'query', 'cookies', 'session'
-        ]
-        _.merge r,
+        ]), {
             parsedUrl: @req._parsedUrl
             startTime: @req._startTime
+        }
 
     # Utility function to bind a listener functionally
     bindListener: (listener, event) ->
@@ -172,26 +174,29 @@ class Server
 
         @matches[pathname]
 
-    applyFilters: (req, filters, fallback) ->
-        unless filters? and filters.length > 0
-            return fallback.call(@)
-
-        filter = _.first(filters)
-
-        [ params, callback ] = filter
-
+    getParams: (params) ->
         # The filter to match on could be a string or an object.
         # If it's a string, it's the equivalent of a filter on '<method> <route.name>'
         if typeof params is 'string'
-            paramString = params
             parts = params.split(' ')
-            params =
+            {
                 method: parts.shift().toUpperCase()
                 route:
                     name: parts.join(' ')
+            }
+        else
+            params
+
+    applyFilters: (req, filters, fallback) ->
+        return fallback.call(@) unless filters? and filters.length > 0
+
+        filter = _.first(filters)
+
+        [ originalParams, callback ] = filter
+        params = @getParams(originalParams)
 
         done = =>
-            @applyFilters req, _.rest(filters)
+            @applyFilters req, _.rest(filters), fallback
 
         # Use json-filter to pattern match the filter requirements
         # against the simplified request
@@ -243,18 +248,15 @@ class Server
             pretty: true
         })
 
+        locals = _.defaults _.clone(@locals),
+            url: (name, args...) =>
+                @routes[name](args)
+
         # Setup HTML for header / footer
         # by prepping a locals dictionary
         # with rendered blocks
-        locals = _.clone(@locals)
-
-        for block in ['headers', 'footers']
-            markup = _.map @config[block], (source) ->
-                jade.render source
-            locals[block] = markup.join('\n')
-
-        locals.url = (name, args...) =>
-            @routes[name](args)
+        _.merge locals, _.object _.map ['headers', 'footers'], (block) =>
+            [ block, _.map(@config[block], (source) -> jade.render source).join('\n') ]
 
         # Render the HTML using a compiled Jade template
         view(locals)
@@ -278,8 +280,7 @@ class Server
             @req = req
             @res = res
 
-            @req.locals = {}
-            @locals = @req.locals
+            @locals = @req.locals = {}
             @session = @req.session
             @params = @req.params
 

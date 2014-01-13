@@ -4,22 +4,24 @@ module.exports =
     routes: [
         { name: 'contact us', url: '/contact-us' }
         { name: 'contacts', url: '/contacts' }
-        { name: 'view contact', url: '/contacts/{id}' }
+        { name: 'contact', url: '/contacts/{id}' }
     ]
 
     menus: [
         { route: 'contact us' }
         { route: 'contacts' }
-        { route: 'view contact', label: 'View Contact #1', params: { id: 1 } }
+        { route: 'contact', label: 'View Contact #1', params: { id: 1 } }
     ]
 
     directives:
         count: text: ->
-            @contacts.length + ' ' + (if @contacts.length==1 then 'contacts' else 'contacts')
+            @contacts.length + ' contact' + 's' unless @contacts.length==1
 
     resources:
         contacts: (set) ->
+            @session.contacts ?= []
             @call set, @session.contacts
+
         contact: (set) ->
             @call set, @session.contacts[0]
 
@@ -31,7 +33,7 @@ module.exports =
         [ 'get contact us', ->
             @render 'contacts/contact'
         ]
-        [ 'view contact', ->
+        [ 'get contact', ->
             @get 'contact', (contact) ->
                 @render 'contacts/contact', { contact: contact }
         ]

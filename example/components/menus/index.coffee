@@ -20,12 +20,6 @@ module.exports =
         menus: label: href: -> @url
 
     listeners:
-        configure: (config) ->
-            config.menus = []
-
-        configureComponent: (config, component) ->
-            config.menus = config.menus.concat(component.menus) if component.menus?
-
         afterConfigure: (config, routes) ->
             # Generate URLs and labels for menus
             _.each config.menus, (menu) ->
